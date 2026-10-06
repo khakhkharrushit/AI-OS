@@ -36,6 +36,34 @@ AVAILABLE AGENTS AND TOOLS:
    - tool: "search_web", arguments: {"query": "<search query to look up on the internet>", "max_results": 5}
    - tool: "open_url", arguments: {"url": "<website URL to open in desktop browser, e.g. https://github.com>"}
    - tool: "extract_page_content", arguments: {"url": "<website URL to read text content from>", "max_chars": 3500}
+
+5. DocumentAgent:
+   - tool: "read_pdf", arguments: {"filepath": "<path to pdf file>", "max_pages": 15}
+   - tool: "read_docx", arguments: {"filepath": "<path to word .docx file>", "max_paragraphs": 50}
+   - tool: "summarize_document", arguments: {"filepath": "<path to document>", "max_chars": 4000}
+   - tool: "search_document_text", arguments: {"filepath": "<path to file>", "query": "<search text>"}
+   - tool: "create_markdown_report", arguments: {"filepath": "<path to output .md>", "title": "<report title>", "content": "<markdown content>"}
+
+6. EmailAgent:
+   - tool: "create_email_draft", arguments: {"recipient": "<email address>", "subject": "<subject line>", "body": "<body text>", "cc": "<optional cc>"}
+   - tool: "send_email", arguments: {"recipient": "<email address>", "subject": "<subject line>", "body": "<body text>", "cc": "<optional cc>"} (HIGH-RISK: requires human approval)
+   - tool: "list_email_drafts", arguments: {"limit": 10}
+   - tool: "generate_email_reply", arguments: {"incoming_email": "<received text>", "tone": "<professional|friendly|concise>", "sender_name": "<name>"}
+   - tool: "open_mail_client", arguments: {"recipient": "<optional>", "subject": "<optional>", "body": "<optional>"}
+
+7. CalendarAgent:
+   - tool: "create_calendar_event", arguments: {"title": "<meeting/event title>", "event_date": "<YYYY-MM-DD or date>", "event_time": "<HH:MM AM/PM>", "duration_minutes": 30, "description": "<details>", "location": "<optional location>"}
+   - tool: "list_upcoming_events", arguments: {"limit": 15}
+   - tool: "search_calendar_events", arguments: {"query": "<search keyword>"}
+   - tool: "delete_calendar_event", arguments: {"event_id": <id number>} (HIGH-RISK: requires human approval)
+   - tool: "export_calendar_ics", arguments: {"title": "<event title>", "event_date": "<YYYY-MM-DD>", "output_path": "<optional destination path>"}
+
+8. VisionAgent:
+   - tool: "capture_screen", arguments: {"save_path": "<optional file destination path>"}
+   - tool: "analyze_screen", arguments: {"query": "<what to inspect or check on the screen>"}
+   - tool: "click_screen_coordinate", arguments: {"x": <x pixel coordinate>, "y": <y pixel coordinate>, "clicks": 1, "button": "left"}
+   - tool: "type_desktop_text", arguments: {"text": "<text string to type into focused app>", "interval": 0.05}
+   - tool: "press_hotkey", arguments: {"keys": "<e.g. 'ctrl+c', 'win+d', 'alt+tab'>"}
 """
 
 def clean_json_response(text: str) -> str:
@@ -52,7 +80,7 @@ def clean_json_response(text: str) -> str:
 def create_plan(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> dict:
     """
     Uses the LLM to break down a high-level user request into a structured JSON plan,
-    incorporating previous conversation context if available.
+    incorporating previous conversation context and long-term memory.
     """
     home_dir = os.path.expanduser("~")
     
@@ -71,7 +99,7 @@ def create_plan(user_input: str, history: Optional[List[Dict[str, str]]] = None)
     prompt = f"""
 You are the AI OS Planner Agent running on a Windows system.
 The user's home directory is: {home_dir}
-Your job is to break down the user's instruction into a sequential execution plan.
+Your job is to break down the user's instruction into a sequential execution plan across the 8 specialized agents.
 You must return your plan as a valid JSON object. Do not include markdown formatting like ```json.
 {TOOL_DEFINITIONS}
 {memory_context}
@@ -85,7 +113,7 @@ Respond ONLY with a JSON object matching this schema:
     {{
       "step_number": 1,
       "description": "A clear description of what this step does",
-      "target_agent": "FileAgent | SystemAgent | MemoryAgent | BrowserAgent",
+      "target_agent": "FileAgent | SystemAgent | MemoryAgent | BrowserAgent | DocumentAgent | EmailAgent | CalendarAgent | VisionAgent",
       "tool": "The specific tool to use",
       "arguments": {{
           "arg1": "value1"
@@ -139,7 +167,7 @@ Respond ONLY with a JSON object matching this schema:
     {{
       "step_number": 1,
       "description": "Clear description of recovery action",
-      "target_agent": "FileAgent | SystemAgent | MemoryAgent | BrowserAgent",
+      "target_agent": "FileAgent | SystemAgent | MemoryAgent | BrowserAgent | DocumentAgent | EmailAgent | CalendarAgent | VisionAgent",
       "tool": "The specific tool to use",
       "arguments": {{}}
     }}
