@@ -7,12 +7,14 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: GEMINI_API_KEY
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: PORT
+        value: 10000
 
   # 2. Next.js Frontend Service
   - type: web
@@ -22,12 +24,11 @@ services:
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    startCommand: npm run start
+    startCommand: npm run start -- -p 10000
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: ai-os-backend
-          property: host
+        value: https://ai-os-backend.onrender.com
       - key: NODE_VERSION
         value: 20.10.0
+      - key: PORT
+        value: 10000
