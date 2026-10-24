@@ -15,6 +15,8 @@ interface Plan {
   steps: Step[];
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 interface Message {
   role: "user" | "agent" | "error";
   content: string;
@@ -22,6 +24,17 @@ interface Message {
   logs?: string[];
   pending_action?: any;
   timestamp: string;
+  document_info?: {
+    name: string;
+    path: string;
+    ext: string;
+    viewUrl: string;
+  };
+  login_credentials?: {
+    url: string;
+    username: string;
+    password: string;
+  };
 }
 
 interface SystemStats {
@@ -34,6 +47,8 @@ interface SystemStats {
   disk_total_gb: number;
   disk_percent: number;
   process_count: number;
+  battery_percent?: number | null;
+  power_plugged?: boolean | null;
 }
 
 interface CalendarEvent {
@@ -63,12 +78,171 @@ export default function AIOSDashboard() {
   const [activeTab, setActiveTab] = useState<"chat" | "memory" | "calendar" | "emails" | "agents">("chat");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [preferences, setPreferences] = useState<Record<string, string>>({});
   const [memoryFacts, setMemoryFacts] = useState<Array<{ id: number; topic: string; content: string; timestamp: string }>>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [emailDrafts, setEmailDrafts] = useState<EmailDraft[]>([]);
   const [agentsList, setAgentsList] = useState<Record<string, Array<{ name: string; description: string; high_risk: boolean }>>>({});
+  const [savedContacts, setSavedContacts] = useState<Record<string, string>>({});
+  const [docFeedback, setDocFeedback] = useState<Record<string, string>>({});
+  const [pendingContactSetup, setPendingContactSetup] = useState<{ name: string; msg: string } | null>(null);
+  const [contactPhoneInput, setContactPhoneInput] = useState("");
+  const [smtpEmailInput, setSmtpEmailInput] = useState("");
+  const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
+  const [smtpSavedMsg, setSmtpSavedMsg] = useState("");
+
+  // Load contacts from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = JSON.parse(localStorage.getItem("ai_os_contacts") || "{}");
+        setSavedContacts(stored);
+      } catch (e) {}
+    }
+  }, []);
+
+  const saveSmtpCredentials = async () => {
+    if (!smtpEmailInput || !smtpPasswordInput) {
+      alert("Please enter both your email address and Google App Password.");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/email/smtp-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email_address: smtpEmailInput,
+          app_password: smtpPasswordInput,
+        }),
+      });
+      if (res.ok) {
+        setSmtpSavedMsg("✅ SMTP credentials saved! Direct background email sending is now active.");
+        setTimeout(() => setSmtpSavedMsg(""), 4000);
+      }
+    } catch (e) {
+      alert("Failed to save SMTP credentials: " + e);
+    }
+  };
+
+  const sendDraftViaSmtp = async (draft: EmailDraft) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/email/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: draft.recipient,
+          subject: draft.subject,
+          body: draft.body,
+          cc: draft.cc || "",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.result || "Email sent successfully!");
+        fetchEmailDrafts();
+      } else {
+        alert("Failed to send: " + (data.error || "Unknown error"));
+      }
+    } catch (e) {
+      alert("Error sending email: " + e);
+    }
+  };
+
+  const saveContactNumber = (name: string, phone: string, autoOpenMsg?: string) => {
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    if (cleanPhone.length < 10) {
+      alert("Please enter a valid phone number (at least 10 digits with country code).");
+      return;
+    }
+    const updated = { ...savedContacts, [name.toLowerCase().trim()]: cleanPhone };
+    setSavedContacts(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ai_os_contacts", JSON.stringify(updated));
+    }
+    setPendingContactSetup(null);
+    setContactPhoneInput("");
+    if (autoOpenMsg) {
+      const waUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(autoOpenMsg)}`;
+      window.open(waUrl, "_blank");
+    }
+  };
+
+  const handleLaunchDesktop = async (filePath: string) => {
+    setDocFeedback((prev) => ({ ...prev, [filePath + "_launch"]: "⏳ Launching..." }));
+    try {
+      const res = await fetch(`${API_BASE}/api/documents/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      });
+      const data = await res.json();
+      setDocFeedback((prev) => ({ ...prev, [filePath + "_launch"]: "✅ Launched" }));
+      setTimeout(() => {
+        setDocFeedback((prev) => ({ ...prev, [filePath + "_launch"]: "" }));
+      }, 3000);
+    } catch (e) {
+      setDocFeedback((prev) => ({ ...prev, [filePath + "_launch"]: "❌ Failed" }));
+      setTimeout(() => {
+        setDocFeedback((prev) => ({ ...prev, [filePath + "_launch"]: "" }));
+      }, 3000);
+    }
+  };
+
+  const handleRevealInExplorer = async (filePath: string) => {
+    setDocFeedback((prev) => ({ ...prev, [filePath + "_reveal"]: "⏳ Opening..." }));
+    try {
+      const res = await fetch(`${API_BASE}/api/documents/reveal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      });
+      const data = await res.json();
+      setDocFeedback((prev) => ({ ...prev, [filePath + "_reveal"]: "✅ Revealed" }));
+      setTimeout(() => {
+        setDocFeedback((prev) => ({ ...prev, [filePath + "_reveal"]: "" }));
+      }, 3000);
+    } catch (e) {
+      setDocFeedback((prev) => ({ ...prev, [filePath + "_reveal"]: "❌ Failed" }));
+      setTimeout(() => {
+        setDocFeedback((prev) => ({ ...prev, [filePath + "_reveal"]: "" }));
+      }, 3000);
+    }
+  };
+
+  const getDocInfoFromMessage = (msg: Message) => {
+    if (msg.document_info) return msg.document_info;
+    const allLogs = msg.logs || [];
+    let foundPath = "";
+    for (const log of allLogs) {
+      const m = log.match(/\(Path:\s*([^)]+)\)/i);
+      if (m && m[1]) {
+        foundPath = m[1].trim();
+        break;
+      }
+    }
+    if (!foundPath) {
+      const m = (msg.content || "").match(/\(Path:\s*([^)]+)\)/i);
+      if (m && m[1]) foundPath = m[1].trim();
+    }
+    if (!foundPath) {
+      const m = (msg.content || "").match(/([a-zA-Z]:\\[^\s'")\n\r]+\.(docx|pdf|txt|pptx|xlsx|doc|ppt|xls|md|html))/i);
+      if (m && m[1]) foundPath = m[1].trim();
+    }
+    if (foundPath) {
+      const docName = foundPath.split(/[\\/]/).pop() || "Document";
+      const docExt = foundPath.substring(foundPath.lastIndexOf(".")).toLowerCase();
+      return {
+        name: docName,
+        path: foundPath,
+        ext: docExt,
+        viewUrl: `${API_BASE}/api/documents/raw?path=${encodeURIComponent(foundPath)}`,
+      };
+    }
+    return null;
+  };
+
   
   // Modals / forms
   const [newPrefKey, setNewPrefKey] = useState("");
@@ -81,6 +255,10 @@ export default function AIOSDashboard() {
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const isSpeakingRef = useRef<boolean>(false);
+  const desiredListeningRef = useRef<boolean>(false);
+  const finalTranscriptRef = useRef<string>("");
+  const autoSendOnEndRef = useRef<boolean>(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -108,19 +286,90 @@ export default function AIOSDashboard() {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
+        // Use non-continuous mode: each utterance is a single command
         recognition.continuous = false;
-        recognition.interimResults = false;
+        recognition.interimResults = true;
         recognition.lang = "en-US";
+        recognition.maxAlternatives = 1;
 
         recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setInput(transcript);
-          setIsListening(false);
-          sendMessage(transcript);
+          // If AI is speaking, completely ignore any results (echo cancellation)
+          if (isSpeakingRef.current) return;
+          
+          let interimTranscript = "";
+          let finalTranscript = "";
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              finalTranscript += result[0].transcript;
+            } else {
+              interimTranscript += result[0].transcript;
+            }
+          }
+          
+          // Accumulate final transcript
+          if (finalTranscript.trim()) {
+            finalTranscriptRef.current += (finalTranscriptRef.current ? " " : "") + finalTranscript.trim();
+          }
+          
+          // Show live preview: accumulated final + current interim
+          const displayText = (finalTranscriptRef.current + (interimTranscript ? " " + interimTranscript : "")).trim();
+          if (displayText) {
+            setInput(displayText);
+          }
         };
 
-        recognition.onerror = () => setIsListening(false);
-        recognition.onend = () => setIsListening(false);
+        recognition.onerror = (e: any) => {
+          if (e.error === "no-speech") {
+            // Restart on silence if still desired
+            if (desiredListeningRef.current && !isSpeakingRef.current) {
+              setTimeout(() => {
+                if (desiredListeningRef.current && !isSpeakingRef.current) {
+                  try { recognition.start(); } catch (err) {}
+                }
+              }, 200);
+            }
+            return;
+          }
+          if (e.error === "aborted") return;
+          setIsListening(false);
+          desiredListeningRef.current = false;
+        };
+
+        recognition.onend = () => {
+          if (isSpeakingRef.current) {
+            // AI is talking, don't restart
+            setIsListening(false);
+            return;
+          }
+          if (desiredListeningRef.current) {
+            // Check if we should auto-send
+            if (autoSendOnEndRef.current && finalTranscriptRef.current.trim()) {
+              const textToSend = finalTranscriptRef.current.trim();
+              finalTranscriptRef.current = "";
+              autoSendOnEndRef.current = false;
+              desiredListeningRef.current = false;
+              setIsListening(false);
+              // Auto-send the voice command
+              setTimeout(() => sendMessage(textToSend), 100);
+            } else {
+              // Restart recognition for continuous listening
+              setTimeout(() => {
+                if (desiredListeningRef.current && !isSpeakingRef.current) {
+                  try {
+                    recognition.start();
+                  } catch (e) {
+                    setIsListening(false);
+                    desiredListeningRef.current = false;
+                  }
+                }
+              }, 100);
+            }
+          } else {
+            setIsListening(false);
+          }
+        };
 
         recognitionRef.current = recognition;
       }
@@ -129,53 +378,102 @@ export default function AIOSDashboard() {
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) {
-      alert("Speech recognition is not supported in this browser. Please use Chrome/Edge.");
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
       return;
     }
-    if (isListening) {
-      recognitionRef.current.stop();
+    if (desiredListeningRef.current) {
+      // Stop listening — if there's accumulated text, auto-send it
+      const accumulatedText = finalTranscriptRef.current.trim() || input.trim();
+      desiredListeningRef.current = false;
+      autoSendOnEndRef.current = false;
       setIsListening(false);
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {}
+      // If user stopped listening with text ready, send it
+      if (accumulatedText) {
+        finalTranscriptRef.current = "";
+        setTimeout(() => sendMessage(accumulatedText), 200);
+      }
     } else {
+      // Cancel any ongoing TTS first
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      finalTranscriptRef.current = "";
+      autoSendOnEndRef.current = false;
+      desiredListeningRef.current = true;
+      setIsListening(true);
+      setInput("");
       try {
         recognitionRef.current.start();
-        setIsListening(true);
       } catch (err) {
-        console.error(err);
+        console.error("SpeechRecognition start error:", err);
       }
     }
   };
-
   const speakText = (text: string) => {
     if (!voiceEnabled || typeof window === "undefined" || !window.speechSynthesis) return;
+    
+    // Stop microphone BEFORE speaking to avoid echo loop
+    desiredListeningRef.current = false;
+    setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+
     window.speechSynthesis.cancel();
-    // Clean markdown symbols for natural vocal speech
-    const cleanSpeech = text.replace(/[*_#`\-]/g, " ").replace(/https?:\/\/\S+/g, "link").slice(0, 250);
+    isSpeakingRef.current = true;
+    setIsSpeaking(true);
+
+    // Only speak first 200 chars to keep it brief
+    const cleanSpeech = text
+      .replace(/[*_#`\-]/g, " ")
+      .replace(/https?:\/\/\S+/g, "link")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200);
     const utterance = new SpeechSynthesisUtterance(cleanSpeech);
-    utterance.rate = 1.05;
+    utterance.rate = 1.1;
     utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    const onSpeakEnd = () => {
+      // Wait 1500ms after TTS ends before allowing mic to restart
+      // This prevents echo: mic won't pick up speaker residual sound
+      setTimeout(() => {
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+      }, 1500);
+    };
+
+    utterance.onend = onSpeakEnd;
+    utterance.onerror = onSpeakEnd;
+
     window.speechSynthesis.speak(utterance);
   };
-
   const fetchSystemStats = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/system/stats");
+      const res = await fetch(`${API_BASE}/api/system/stats`);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
       }
-    } catch (e) {
-      // Backend not running yet or unreachable
-    }
+    } catch (e) {}
   };
 
   const fetchMemory = async () => {
     try {
-      const prefRes = await fetch("http://127.0.0.1:8000/api/memory/preferences");
+      const prefRes = await fetch(`${API_BASE}/api/memory/preferences`);
       if (prefRes.ok) {
         const data = await prefRes.json();
         setPreferences(data.preferences || {});
       }
-      const factRes = await fetch("http://127.0.0.1:8000/api/memory/facts");
+      const factRes = await fetch(`${API_BASE}/api/memory/facts`);
       if (factRes.ok) {
         const data = await factRes.json();
         setMemoryFacts(data.facts || []);
@@ -185,7 +483,7 @@ export default function AIOSDashboard() {
 
   const fetchCalendar = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/calendar/events");
+      const res = await fetch(`${API_BASE}/api/calendar/events`);
       if (res.ok) {
         const data = await res.json();
         setCalendarEvents(data.events || []);
@@ -195,7 +493,7 @@ export default function AIOSDashboard() {
 
   const fetchEmailDrafts = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/email/drafts");
+      const res = await fetch(`${API_BASE}/api/email/drafts`);
       if (res.ok) {
         const data = await res.json();
         setEmailDrafts(data.drafts || []);
@@ -205,7 +503,7 @@ export default function AIOSDashboard() {
 
   const fetchAgentsManifest = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/agents");
+      const res = await fetch(`${API_BASE}/api/agents`);
       if (res.ok) {
         const data = await res.json();
         setAgentsList(data.agents || {});
@@ -214,6 +512,20 @@ export default function AIOSDashboard() {
   };
 
   const sendMessage = async (textToSend?: string) => {
+    // Stop recording and cancel speech immediately
+    desiredListeningRef.current = false;
+    setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    isSpeakingRef.current = false;
+    setIsSpeaking(false);
+
     const userMessage = (textToSend || input).trim();
     if (!userMessage) return;
 
@@ -229,7 +541,7 @@ export default function AIOSDashboard() {
         content: m.content,
       }));
 
-      const res = await fetch("http://127.0.0.1:8000/api/chat", {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -241,6 +553,51 @@ export default function AIOSDashboard() {
       const data = await res.json();
 
       if (res.ok) {
+        // Extract document info if any document was referenced
+        let detectedDocInfo: { name: string; path: string; ext: string; viewUrl: string } | undefined = undefined;
+        let detectedPath = "";
+        const allLogs = data.agent_logs || [];
+        for (const log of allLogs) {
+          const m = log.match(/\(Path:\s*([^)]+)\)/i);
+          if (m && m[1]) {
+            detectedPath = m[1].trim();
+            break;
+          }
+        }
+        if (!detectedPath) {
+          const m = (data.reply || "").match(/\(Path:\s*([^)]+)\)/i);
+          if (m && m[1]) detectedPath = m[1].trim();
+        }
+        if (!detectedPath) {
+          const m = (data.reply || "").match(/([a-zA-Z]:\\[^\s'")\n\r]+\.(docx|pdf|txt|pptx|xlsx|doc|ppt|xls|md|html))/i);
+          if (m && m[1]) detectedPath = m[1].trim();
+        }
+        if (detectedPath) {
+          const docName = detectedPath.split(/[\\/]/).pop() || "Document";
+          const docExt = detectedPath.substring(detectedPath.lastIndexOf(".")).toLowerCase();
+          detectedDocInfo = {
+            name: docName,
+            path: detectedPath,
+            ext: docExt,
+            viewUrl: `${API_BASE}/api/documents/raw?path=${encodeURIComponent(detectedPath)}`,
+          };
+        }
+
+        // Extract login credentials if present in steps
+        let detectedCreds: { url: string; username: string; password: string } | undefined = undefined;
+        if (data.plan?.steps) {
+          for (const st of data.plan.steps) {
+            if (st.tool === "autofill_login_credentials" && st.arguments) {
+              detectedCreds = {
+                url: st.arguments.url || "",
+                username: st.arguments.username || "",
+                password: st.arguments.password || "",
+              };
+              break;
+            }
+          }
+        }
+
         setMessages((prev) => [
           ...prev,
           {
@@ -249,6 +606,8 @@ export default function AIOSDashboard() {
             plan: data.plan,
             logs: data.agent_logs,
             pending_action: data.pending_action,
+            document_info: detectedDocInfo,
+            login_credentials: detectedCreds,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
@@ -256,6 +615,131 @@ export default function AIOSDashboard() {
         fetchMemory();
         fetchCalendar();
         fetchEmailDrafts();
+
+        // --- OPEN URLS DIRECTLY IN THIS CHROME TAB ---
+        // The frontend executes window.open for BrowserAgent actions (opening in the exact active profile)
+        if (data.plan?.steps) {
+          data.plan.steps.forEach((step: any) => {
+            if (step.target_agent === "BrowserAgent") {
+              if (step.tool === "play_youtube_video") {
+                const query = step.arguments?.query || "";
+                const ytUrl = query 
+                  ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query.trim())}`
+                  : "https://www.youtube.com";
+                setTimeout(() => {
+                  window.open(ytUrl, "_blank");
+                }, 100);
+              } else if (step.tool === "autofill_login_credentials") {
+                const targetUrl = step.arguments?.url || "";
+                if (targetUrl) {
+                  setTimeout(() => {
+                    window.open(targetUrl, "_blank");
+                  }, 150);
+                }
+              } else if (step.tool === "open_url" && step.arguments?.url) {
+                setTimeout(() => {
+                  window.open(step.arguments.url, "_blank");
+                }, 100);
+              } else if (step.tool === "send_whatsapp_message" || step.tool === "open_whatsapp_chat") {
+                const msg = step.arguments?.message || "";
+                const contact = (step.arguments?.contact || "").trim();
+                let cleanPhone = contact.replace(/[^0-9]/g, "");
+
+                // Check stored contacts in localStorage for auto-resolution
+                if (cleanPhone.length < 10 && typeof window !== "undefined") {
+                  try {
+                    const savedContacts = JSON.parse(localStorage.getItem("ai_os_contacts") || "{}");
+                    const normalized = contact.toLowerCase();
+                    if (savedContacts[normalized]) {
+                      cleanPhone = savedContacts[normalized].replace(/[^0-9]/g, "");
+                    } else {
+                      // Check partial match (e.g. "ashutosh" matching "ashutosh vit")
+                      for (const [name, phone] of Object.entries(savedContacts)) {
+                        if (normalized.includes(name) || name.includes(normalized)) {
+                          cleanPhone = (phone as string).replace(/[^0-9]/g, "");
+                          break;
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    console.error("Failed to load contacts:", e);
+                  }
+                }
+
+                // Automatically copy message to clipboard
+                if (msg && typeof navigator !== "undefined" && navigator.clipboard) {
+                  navigator.clipboard.writeText(msg).catch(() => {});
+                }
+
+                // If phone is known, open directly into that contact's chat (No contact selection modal needed!)
+                // If phone is not yet mapped, open WhatsApp Web with prefilled message
+                const waUrl = cleanPhone.length >= 10
+                  ? `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`
+                  : (msg ? `https://web.whatsapp.com/send?text=${encodeURIComponent(msg)}` : "https://web.whatsapp.com");
+
+                setTimeout(() => {
+                  window.open(waUrl, "_blank");
+                }, 100);
+              }
+
+            }
+
+            if (step.target_agent === "EmailAgent") {
+              const recipient = step.arguments?.recipient || "";
+              const subject = step.arguments?.subject || "";
+              const body = step.arguments?.body || "";
+              const cc = step.arguments?.cc || "";
+              let gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+              if (cc) gmailUrl += `&cc=${encodeURIComponent(cc)}`;
+
+              if (step.tool === "create_email_draft" || step.tool === "open_mail_client") {
+                setTimeout(() => {
+                  window.open(gmailUrl, "_blank");
+                }, 150);
+              }
+              fetchEmailDrafts();
+            }
+
+            if (step.target_agent === "DocumentAgent" || step.target_agent === "FileAgent") {
+              const toolName = step.tool || "";
+              if (["open_document", "open_latest_document", "open_file"].includes(toolName)) {
+                let docPath = detectedPath;
+                if (!docPath && step.arguments?.query) {
+                  const q = step.arguments.query;
+                  if (q.includes(":") || q.includes("\\") || q.includes("/")) {
+                    docPath = q;
+                  }
+                }
+                if (docPath) {
+                  const ext = docPath.substring(docPath.lastIndexOf(".")).toLowerCase();
+                  const rawUrl = `${API_BASE}/api/documents/raw?path=${encodeURIComponent(docPath)}`;
+                  if ([".pdf", ".txt", ".md", ".json", ".html", ".png", ".jpg", ".jpeg"].includes(ext)) {
+                    setTimeout(() => {
+                      window.open(rawUrl, "_blank");
+                    }, 150);
+                  }
+                  if ([".docx", ".doc", ".pptx", ".xlsx"].includes(ext)) {
+                    handleLaunchDesktop(docPath);
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        // Direct fallback: if user prompt was asking to open and doc was detected
+        if (userMessage.toLowerCase().includes("open") && detectedDocInfo) {
+          if ([".pdf", ".txt", ".md", ".json", ".html", ".png", ".jpg", ".jpeg"].includes(detectedDocInfo.ext)) {
+            setTimeout(() => {
+              window.open(detectedDocInfo!.viewUrl, "_blank");
+            }, 150);
+          }
+          if ([".docx", ".doc", ".pptx", ".xlsx"].includes(detectedDocInfo.ext)) {
+            handleLaunchDesktop(detectedDocInfo.path);
+          }
+        }
+
+
       } else {
         setMessages((prev) => [
           ...prev,
@@ -296,7 +780,7 @@ export default function AIOSDashboard() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/chat", {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -318,6 +802,20 @@ export default function AIOSDashboard() {
         ]);
         speakText(data.reply);
         fetchMemory();
+        fetchEmailDrafts();
+
+        if (action.agent_name === "EmailAgent" || action.target_agent === "EmailAgent") {
+          const args = action.arguments || {};
+          const recipient = args.recipient || "";
+          const subject = args.subject || "";
+          const body = args.body || "";
+          const cc = args.cc || "";
+          let gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          if (cc) gmailUrl += `&cc=${encodeURIComponent(cc)}`;
+          setTimeout(() => {
+            window.open(gmailUrl, "_blank");
+          }, 150);
+        }
       } else {
         setMessages((prev) => [
           ...prev,
@@ -338,7 +836,7 @@ export default function AIOSDashboard() {
   const saveNewPreference = async () => {
     if (!newPrefKey || !newPrefVal) return;
     try {
-      await fetch("http://127.0.0.1:8000/api/memory/preferences", {
+      await fetch(`${API_BASE}/api/memory/preferences`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: newPrefKey, value: newPrefVal })
@@ -352,7 +850,7 @@ export default function AIOSDashboard() {
   const saveNewFact = async () => {
     if (!newFactTopic || !newFactContent) return;
     try {
-      await fetch("http://127.0.0.1:8000/api/memory/facts", {
+      await fetch(`${API_BASE}/api/memory/facts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: newFactTopic, content: newFactContent })
@@ -366,7 +864,7 @@ export default function AIOSDashboard() {
   const saveNewCalendarEvent = async () => {
     if (!newEventTitle || !newEventDate) return;
     try {
-      await fetch("http://127.0.0.1:8000/api/calendar/events", {
+      await fetch(`${API_BASE}/api/calendar/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newEventTitle, event_date: newEventDate, event_time: newEventTime })
@@ -534,6 +1032,17 @@ export default function AIOSDashboard() {
 
           {/* Voice Controls */}
           <div className="flex items-center gap-3">
+            {stats?.battery_percent !== undefined && stats?.battery_percent !== null && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-neutral-800/80 border border-neutral-700/60 text-xs font-mono">
+                <span>{stats.power_plugged ? "⚡" : "🔋"}</span>
+                <span className={stats.battery_percent <= 20 ? "text-rose-400 font-bold" : "text-emerald-400 font-medium"}>
+                  {stats.battery_percent}%
+                </span>
+                <span className="text-[10px] text-neutral-400">
+                  {stats.power_plugged ? "Charging" : "Battery"}
+                </span>
+              </div>
+            )}
             <button
               onClick={() => setVoiceEnabled(!voiceEnabled)}
               className={`p-1.5 rounded-lg border text-xs font-mono transition flex items-center gap-1.5 ${
@@ -694,11 +1203,179 @@ export default function AIOSDashboard() {
                           >
                             <span>✓</span> Approve & Resume Multi-Step Plan
                           </button>
+                          {msg.pending_action.agent_name === "EmailAgent" && (
+                            <button
+                              onClick={() => {
+                                const args = msg.pending_action.arguments || {};
+                                const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(args.recipient || "")}&su=${encodeURIComponent(args.subject || "")}&body=${encodeURIComponent(args.body || "")}`;
+                                window.open(gmailUrl, "_blank");
+                              }}
+                              className="w-full mt-2 py-2 rounded-lg bg-red-600/80 hover:bg-red-500 text-white font-semibold text-xs tracking-wide transition shadow-lg flex items-center justify-center gap-2"
+                            >
+                              <span>🚀</span> 1-Click Open in Gmail Web Compose
+                            </button>
+                          )}
                         </div>
                       )}
+
+                      {/* Interactive Web Login Credentials Card */}
+                      {msg.login_credentials && (
+                        <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-violet-950/50 via-purple-950/50 to-indigo-950/50 border border-purple-500/40 shadow-xl backdrop-blur-md">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-lg">
+                                🔐
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-white tracking-tight flex items-center gap-2">
+                                  <span>Automated Portal Login</span>
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                    AUTOFILL READY
+                                  </span>
+                                </h4>
+                                <a 
+                                  href={msg.login_credentials.url} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-[11px] font-mono text-cyan-400 hover:underline truncate max-w-sm block"
+                                >
+                                  {msg.login_credentials.url}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 text-xs font-mono bg-black/50 p-3 rounded-lg border border-purple-500/20">
+                            <div className="flex items-center justify-between">
+                              <span className="text-neutral-400">Username:</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-white font-bold">{msg.login_credentials.username}</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.login_credentials!.username);
+                                    alert("Username copied to clipboard!");
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 transition"
+                                  title="Copy username"
+                                >
+                                  📋 Copy
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-neutral-400">Password:</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-white font-mono">{msg.login_credentials.password}</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.login_credentials!.password);
+                                    alert("Password copied to clipboard!");
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 transition"
+                                  title="Copy password"
+                                >
+                                  📋 Copy
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <p className="mt-2.5 text-[11px] text-purple-200/80 leading-relaxed">
+                            ⚡ <strong>Status:</strong> The login portal has opened in your browser. Note: VTOP requires an image CAPTCHA — solve the CAPTCHA to complete sign-in.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Interactive Document Card */}
+                      {(() => {
+                        const docInfo = getDocInfoFromMessage(msg);
+                        if (!docInfo) return null;
+                        return (
+                          <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-950/40 via-indigo-950/40 to-cyan-950/40 border border-blue-500/40 shadow-xl backdrop-blur-md">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-xl shrink-0">
+                                  {docInfo.ext === ".pdf" ? "📕" : [".docx", ".doc"].includes(docInfo.ext) ? "📘" : docInfo.ext === ".pptx" ? "📙" : docInfo.ext === ".xlsx" ? "📗" : "📄"}
+                                </div>
+                                <div className="min-w-0">
+                                  <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-2 truncate">
+                                    <span>{docInfo.name}</span>
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase shrink-0">
+                                      {docInfo.ext.replace(".", "") || "FILE"}
+                                    </span>
+                                  </h4>
+                                  <p className="text-[11px] font-mono text-neutral-400 truncate max-w-md" title={docInfo.path}>
+                                    {docInfo.path}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Document Action Buttons */}
+                            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-blue-500/20">
+                              <button
+                                onClick={() => window.open(docInfo.viewUrl, "_blank")}
+                                className="py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-md hover:shadow-blue-500/25 cursor-pointer"
+                                title="Open directly in a new browser tab"
+                              >
+                                <span>🚀</span> Open in Browser
+                              </button>
+                              <button
+                                onClick={() => handleLaunchDesktop(docInfo.path)}
+                                className="py-2 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-semibold text-xs border border-neutral-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                title="Launch with native desktop application"
+                              >
+                                <span>💻</span> {docFeedback[docInfo.path + "_launch"] || "Launch Desktop"}
+                              </button>
+                              <button
+                                onClick={() => handleRevealInExplorer(docInfo.path)}
+                                className="py-2 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-semibold text-xs border border-neutral-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                title="Show file in Windows File Explorer"
+                              >
+                                <span>📂</span> {docFeedback[docInfo.path + "_reveal"] || "File Explorer"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))
+              )}
+
+              {pendingContactSetup && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/60 to-teal-950/60 border border-emerald-500/50 shadow-lg text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-emerald-400">
+                      <span>💬</span>
+                      <span>WhatsApp Direct-Chat Setup: {pendingContactSetup.name}</span>
+                    </div>
+                    <button 
+                      onClick={() => setPendingContactSetup(null)}
+                      className="text-neutral-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-neutral-300">
+                    To open {pendingContactSetup.name}&apos;s chat directly with zero clicks every time, enter their phone number once:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. +919876543210 or 9876543210"
+                      value={contactPhoneInput}
+                      onChange={(e) => setContactPhoneInput(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-emerald-500/40 text-white font-mono text-xs focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      onClick={() => saveContactNumber(pendingContactSetup.name, contactPhoneInput, pendingContactSetup.msg)}
+                      className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold tracking-wide transition shadow"
+                    >
+                      Save & Direct Open
+                    </button>
+                  </div>
+                </div>
               )}
 
               {loading && (
@@ -721,14 +1398,14 @@ export default function AIOSDashboard() {
                 {/* Voice Microphone Button */}
                 <button
                   onClick={toggleVoiceInput}
-                  className={`p-3 rounded-xl border transition flex items-center justify-center shrink-0 ${
+                  className={`px-3.5 py-3 rounded-xl border transition flex items-center gap-2 font-mono text-xs shrink-0 ${
                     isListening
-                      ? "bg-rose-500 text-white border-rose-400 animate-pulse shadow-lg shadow-rose-500/40"
+                      ? "bg-rose-600 text-white border-rose-400 animate-pulse shadow-lg shadow-rose-500/40 font-bold"
                       : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border-neutral-700"
                   }`}
-                  title="Speak instruction using microphone"
+                  title={isListening ? "Click to stop recording and keep text" : "Click to speak your instruction"}
                 >
-                  <span className="text-base">{isListening ? "🎙️ Recording..." : "🎙️"}</span>
+                  <span>{isListening ? "🔴 Listening..." : "🎙️ Voice"}</span>
                 </button>
 
                 {/* Text Input */}
@@ -738,7 +1415,11 @@ export default function AIOSDashboard() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                    placeholder="Enter natural language command (e.g. 'Search web for AI news', 'Summarize resume.pdf', 'Check CPU')..."
+                    placeholder={
+                      isListening
+                        ? "Speak your command (e.g. 'open notepad and create file rk and write my name is rk')..."
+                        : "Enter natural language command..."
+                    }
                     className="w-full bg-[#151a24] border border-neutral-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition"
                   />
                 </div>
@@ -911,36 +1592,101 @@ export default function AIOSDashboard() {
         {/* TAB 4: EMAIL DRAFTS */}
         {activeTab === "emails" && (
           <div className="flex-1 p-8 overflow-y-auto max-w-5xl mx-auto w-full space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white mb-1">✉️ Email Drafts & Dispatcher</h2>
-              <p className="text-xs text-neutral-400">Created by EmailAgent with safety approval safeguards.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white mb-1">📧 Email Hub & Live Dispatcher</h2>
+                <p className="text-xs text-neutral-400">Send directly via Gmail Web Compose, desktop mailto, or automated background SMTP.</p>
+              </div>
             </div>
 
+            {/* SMTP Setup Card */}
+            <div className="bg-[#121620] border border-neutral-800 rounded-2xl p-5 shadow-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-sm flex items-center gap-2">
+                  <span>⚡</span> Background SMTP Delivery Configuration (Optional)
+                </span>
+                <span className="text-[11px] text-neutral-400">For 100% autonomous sending without browser clicks</span>
+              </div>
+              <p className="text-xs text-neutral-300">
+                Enter your Gmail or Outlook credentials (use a 16-character <span className="text-cyan-300 font-mono">Google App Password</span> for security).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  type="email"
+                  placeholder="Your Email (e.g. user@gmail.com)"
+                  value={smtpEmailInput}
+                  onChange={(e) => setSmtpEmailInput(e.target.value)}
+                  className="bg-black/50 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+                <input
+                  type="password"
+                  placeholder="16-character App Password"
+                  value={smtpPasswordInput}
+                  onChange={(e) => setSmtpPasswordInput(e.target.value)}
+                  className="bg-black/50 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                />
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  onClick={saveSmtpCredentials}
+                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition shadow-md flex items-center gap-2"
+                >
+                  <span>💾</span> Save SMTP Credentials
+                </button>
+                {smtpSavedMsg && <span className="text-xs text-emerald-400 font-medium">{smtpSavedMsg}</span>}
+              </div>
+            </div>
+
+            {/* Stored Emails & Drafts */}
             <div className="bg-[#121620] border border-neutral-800 rounded-2xl p-6 shadow-xl space-y-3">
+              <h3 className="font-bold text-white text-sm border-b border-neutral-800 pb-2">
+                Stored Email Dispatches & Drafts ({emailDrafts.length})
+              </h3>
               {emailDrafts.length === 0 ? (
                 <p className="text-xs text-neutral-400 text-center py-6">No email drafts stored in memory.</p>
               ) : (
-                emailDrafts.map((d) => (
-                  <div key={d.id} className="p-4 rounded-xl bg-black/40 border border-neutral-800 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white text-sm">{d.subject}</span>
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] uppercase">
-                        {d.status}
-                      </span>
+                emailDrafts.map((d) => {
+                  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(d.recipient)}&su=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`;
+                  const mailtoUrl = `mailto:${encodeURIComponent(d.recipient)}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`;
+                  return (
+                    <div key={d.id} className="p-4 rounded-xl bg-black/40 border border-neutral-800 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white text-sm">{d.subject}</span>
+                        <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] uppercase font-bold">
+                          {d.status}
+                        </span>
+                      </div>
+                      <div className="text-neutral-400 text-[11px]">To: <span className="text-cyan-300 font-mono">{d.recipient}</span></div>
+                      <div className="text-neutral-300 bg-black/30 p-2.5 rounded-lg whitespace-pre-wrap font-sans text-xs">
+                        {d.body}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => window.open(gmailUrl, "_blank")}
+                          className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-500 text-white font-semibold text-[11px] transition flex items-center gap-1.5"
+                        >
+                          <span>🚀</span> Open in Gmail Web
+                        </button>
+                        <button
+                          onClick={() => window.open(mailtoUrl, "_blank")}
+                          className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-semibold text-[11px] transition flex items-center gap-1.5"
+                        >
+                          <span>✉️</span> Windows Mail
+                        </button>
+                        <button
+                          onClick={() => sendDraftViaSmtp(d)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-semibold text-[11px] transition flex items-center gap-1.5"
+                        >
+                          <span>⚡</span> Send via SMTP
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-neutral-400 text-[11px]">To: <span className="text-cyan-300 font-mono">{d.recipient}</span></div>
-                    <div className="text-neutral-300 bg-black/30 p-2.5 rounded-lg whitespace-pre-wrap font-sans text-xs">
-                      {d.body}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
-        )}
-
-        {/* TAB 5: AGENT CAPABILITY CATALOG */}
-        {activeTab === "agents" && (
+        )}\n\n        {activeTab === "agents" && (
           <div className="flex-1 p-8 overflow-y-auto max-w-5xl mx-auto w-full space-y-6">
             <div>
               <h2 className="text-xl font-bold text-white mb-1">⚡ Registered Agent Tool Catalog</h2>

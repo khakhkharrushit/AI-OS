@@ -265,14 +265,20 @@ def delete_calendar_event(event_id: int) -> bool:
 
 # --- Email Draft Operations ---
 
-def save_email_draft(recipient: str, subject: str, body: str, cc: str = "") -> int:
+def save_email_draft(recipient: str, subject: str, body: str, cc: str = "", status: str = "draft") -> int:
     with get_connection() as conn:
         cursor = conn.execute("""
-            INSERT INTO email_drafts (recipient, subject, body, cc)
-            VALUES (?, ?, ?, ?);
-        """, (recipient.strip(), subject.strip(), body.strip(), cc.strip()))
+            INSERT INTO email_drafts (recipient, subject, body, cc, status)
+            VALUES (?, ?, ?, ?, ?);
+        """, (recipient.strip(), subject.strip(), body.strip(), cc.strip(), status.strip()))
         conn.commit()
         return cursor.lastrowid
+
+def update_email_draft_status(draft_id: int, status: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("UPDATE email_drafts SET status = ? WHERE id = ?;", (status.strip(), int(draft_id)))
+        conn.commit()
+        return cursor.rowcount > 0
 
 def get_email_drafts(limit: int = 10) -> List[Dict[str, Any]]:
     with get_connection() as conn:

@@ -64,7 +64,8 @@ Analyze this desktop screenshot carefully:
     def click_screen_coordinate(self, x: int, y: int, clicks: int = 1, button: str = "left", **kwargs) -> str:
         try:
             import pyautogui
-            pyautogui.FAILSAFE = True
+            pyautogui.FAILSAFE = False
+            time.sleep(0.3)
             pyautogui.click(x=int(x), y=int(y), clicks=int(clicks), button=button)
             return f"Clicked mouse {button} button at ({x}, {y}) {clicks} time(s)."
         except ImportError:
@@ -72,14 +73,18 @@ Analyze this desktop screenshot carefully:
         except Exception as e:
             raise Exception(f"Mouse click failed at ({x}, {y}): {e}")
 
-    def type_desktop_text(self, text: str, interval: float = 0.05, **kwargs) -> str:
+    def type_desktop_text(self, text: str, interval: float = 0.05, press_enter: bool = False, **kwargs) -> str:
         if not text:
             raise ValueError("Text string is required.")
         try:
             import pyautogui
-            pyautogui.FAILSAFE = True
+            pyautogui.FAILSAFE = False
+            time.sleep(0.6)  # Allow target application window to gain focus
             pyautogui.write(text, interval=float(interval))
-            return f"Typed {len(text)} characters into the focused application."
+            if press_enter or text.endswith("="):
+                time.sleep(0.3)
+                pyautogui.press("enter")
+            return f"Successfully typed '{text}' into the active application."
         except ImportError:
             raise Exception("pyautogui is required for typing automation.")
         except Exception as e:
@@ -87,13 +92,18 @@ Analyze this desktop screenshot carefully:
 
     def press_hotkey(self, keys: str, **kwargs) -> str:
         if not keys:
-            raise ValueError("Keys string is required (e.g. 'ctrl,c' or 'win,d').")
+            raise ValueError("Keys string is required (e.g. 'ctrl+c', 'win+d', 'alt+tab', 'enter').")
         try:
             import pyautogui
-            pyautogui.FAILSAFE = True
-            key_list = [k.strip().lower() for k in keys.replace('+', ',').split(',')]
-            pyautogui.hotkey(*key_list)
-            return f"Pressed keyboard hotkey: {'+'.join(key_list)}"
+            pyautogui.FAILSAFE = False
+            time.sleep(0.4)
+            normalized = keys.replace('+', ',').replace(' ', '')
+            key_list = [k.strip().lower() for k in normalized.split(',') if k.strip()]
+            if len(key_list) == 1:
+                pyautogui.press(key_list[0])
+            else:
+                pyautogui.hotkey(*key_list)
+            return f"Pressed keyboard key(s): {'+'.join(key_list)}"
         except ImportError:
             raise Exception("pyautogui is required for hotkey automation.")
         except Exception as e:

@@ -71,7 +71,7 @@ def test_file_agent_lifecycle(tmp_path):
     
     # 6. Delete file (Direct invocation)
     del_res = agent.delete_file(test_file)
-    assert "Deleted" in del_res
+    assert "deleted" in del_res.lower()
     assert not os.path.exists(test_file)
 
 def test_system_agent_info_and_process():
@@ -148,7 +148,7 @@ def test_safety_interception():
     # Delete tool has high_risk=True
     resp = file_agent.execute_tool("delete_file", bypass_safety=False, filepath="dummy.txt")
     assert resp.needs_confirmation is True
-    assert "Blocked" in resp.result
+    assert "Security Alert" in resp.result or "confirmation" in resp.result
 
 def test_executor_plan_and_safety_halt():
     plan = {

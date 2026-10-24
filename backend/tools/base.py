@@ -18,9 +18,10 @@ class Tool:
         Execute the tool function. Integrates the Safety Validator Layer.
         """
         if self.high_risk and not bypass_safety:
-            # For Phase 3, we simulate intercepting for human approval.
+            target_info = kwargs.get("target_name") or kwargs.get("filepath") or kwargs.get("folderpath") or kwargs.get("app_name") or kwargs.get("command") or ""
+            target_desc = f" for '{target_info}'" if target_info else ""
             return ToolResponse(
-                result=f"Blocked: Execution of high-risk tool '{self.name}' requires human verification.",
+                result=f"Security Alert: Execution of high-risk operation '{self.name}'{target_desc} requires human confirmation before proceeding.",
                 needs_confirmation=True
             )
         try:

@@ -1,3 +1,4 @@
+import time
 from agents.registry import get_agent
 from planner_agent import replan_after_failure
 
@@ -113,6 +114,22 @@ def execute_plan(
             
         logs.append(f"-> Success: {response.result}")
         step_idx += 1
+        # Dynamic delay between steps — gives apps and webpages time to load before next action
+        if step_idx < total_steps:
+            if tool_name == "open_url":
+                url_arg = str(kwargs.get("url", "")).lower()
+                if "whatsapp" in url_arg:
+                    time.sleep(7.0)
+                else:
+                    time.sleep(2.0)
+            elif tool_name == "click_screen_coordinate":
+                time.sleep(1.0)
+            elif tool_name == "type_desktop_text":
+                time.sleep(2.2)
+            elif tool_name == "open_application":
+                time.sleep(2.0)
+            else:
+                time.sleep(1.0)
             
     logs.append("Plan execution completed.")
     return logs, None

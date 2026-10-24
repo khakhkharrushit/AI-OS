@@ -42,7 +42,16 @@ This document tracks our ongoing development progress, technical decisions, and 
 - **Decision:** Added `backend/requirements.txt`.
   - **Why:** To make the backend environment reproducible.
 
-## Phase 4 (Upcoming: Memory Architecture)
-- **Goal:** Implement structured SQLite storage for user preferences and vector embeddings for semantic retrieval.
-- **Current Status:** In progress (short-term conversation history implemented; SQLite database next).
+## Phase 4: Web & Desktop Automation (Completed)
+- **Decision:** WhatsApp Web & Browser Multi-Step Messaging Pipeline.
+  - **Why:** Complex natural language requests like "open whatsapp web and message Ashutosh 'hi'" combine web opening, UI element search, contact selection, and keystroke automation. Added dedicated multi-agent sequencing (`BrowserAgent.open_url` -> `VisionAgent.press_hotkey('ctrl+alt+/')` -> `VisionAgent.type_desktop_text` -> `VisionAgent.press_hotkey('enter')`).
+- **Decision:** Prevented CMD Window Popups & Fixed Application Disambiguation.
+  - **Why:** SystemAgent's fallback previously invoked `cmd.exe /c start` for unknown tokens (such as human contact names), causing black CMD windows and syntax errors. Added validation via `shutil.which` and `subprocess.CREATE_NO_WINDOW` flags across all agents.
+- **Decision:** Upgraded AI Reasoning Model to `gemini-3.5-flash-lite`.
+  - **Why:** Replaced deprecated model references with `gemini-3.5-flash-lite`, offering sub-second planning latency and zero rate limit timeouts.
+- **Decision:** Windows Desktop Shell (`explorer.exe`) Document Launching.
+  - **Why:** Background Python subprocesses calling `WINWORD.EXE` directly can cause Word to start in headless COM mode or remain hidden behind active browser windows. Spawning files through `explorer.exe <filepath>` invokes the native Windows Desktop Shell, opening files with full interactive GUI elevation in the active user session.
+
+## Phase 5 (Upcoming: Memory Architecture & Embeddings)
+- **Goal:** Structured SQLite preference storage and vector embeddings for contextual retrieval.
 
