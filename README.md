@@ -2,13 +2,16 @@
 ### Intelligent Natural-Language Operating System Orchestrator
 **Final Year Engineering Capstone Project | Built by [Rushit Khakhkhar](https://github.com/khakhkharrushit)**
 
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Gemini AI](https://img.shields.io/badge/Google%20Gemini-Pro%20%2F%20Flash-8E75B2?logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
-[![Tests](https://img.shields.io/badge/Pytest-9%2F9%20Passing%20(100%25)-success?logo=pytest&logoColor=white)](https://docs.pytest.org/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-ai--os--frontend.onrender.com-46E3B7?style=for-the-badge&logo=render&logoColor=black)](https://ai-os-frontend.onrender.com)
+[![API Docs](https://img.shields.io/badge/FastAPI%20Swagger-ai--os--backend.onrender.com%2Fdocs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://ai-os-backend.onrender.com/docs)
+[![Tests](https://img.shields.io/badge/Pytest-9%2F9%20Passing%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](https://docs.pytest.org/)
+
+---
+
+> 🌐 **Live Cloud Demo**: [https://ai-os-frontend.onrender.com](https://ai-os-frontend.onrender.com)  
+> 📖 **Interactive OpenAPI Docs**: [https://ai-os-backend.onrender.com/docs](https://ai-os-backend.onrender.com/docs)  
+> 💻 **Full Local Desktop Agent**: Run `python run.py` locally for native access to your PC (Word, WhatsApp desktop, battery, local files).  
+> 📄 **Academic Dissertation**: View the full project report at [`AI_OS_Dissertation_Final.pdf`](AI_OS_Dissertation_Final.pdf).
 
 ---
 
@@ -78,66 +81,41 @@ The **AI Operating System (AI OS)** is a unified multi-agent orchestrator that e
 
 ---
 
-## 🚀 Quick Start Guide
+## 🌐 Live Cloud Demo vs. Local Desktop Execution
 
-### Option 1: 1-Click Launch (Recommended for Full Desktop OS Control)
+| Feature | 🌐 Live Cloud Demo (Render) | 💻 Local Desktop Mode (`run.py`) |
+| :--- | :---: | :---: |
+| **URL / Access** | [ai-os-frontend.onrender.com](https://ai-os-frontend.onrender.com) | `http://localhost:3000` |
+| **Natural Language AI Chat** | ✅ Active (Gemini 1.5/2.0) | ✅ Active (Gemini 1.5/2.0) |
+| **Live Weather & Geolocation** | ✅ Active (`wttr.in`) | ✅ Active (`wttr.in`) |
+| **DuckDuckGo Web Research** | ✅ Active | ✅ Active |
+| **Calendar & Memory DB** | ✅ Active | ✅ Active |
+| **Open Native Word / Chrome / Explorer** | Cloud Sandbox Mode | ✅ Directly Opens on Your Screen |
+| **Desktop WhatsApp Automation** | Cloud Sandbox Mode | ✅ Types & Sends in WhatsApp App |
+| **Physical Laptop Battery & CPU** | Server VM Telemetry | ✅ Reads Your Machine's Hardware |
+| **Local File System Access** | Isolated Cloud Sandbox | ✅ Full Access to Local Hard Drive |
 
-The AI OS comes with a cross-platform 1-click launcher script `run.py`:
+---
+
+## 🚀 Running Locally (1-Click Setup)
+
+To test the full desktop agent with native access to your computer:
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/khakhkharrushit/AI-OS.git
 cd AI-OS
 
-# Run the 1-click launcher
+# 2. Run the 1-click launcher
 python run.py
 ```
 
 `run.py` automatically:
-1. Validates your environment and creates `backend/.env` from `.env.example` if needed.
-2. Spawns the **FastAPI Backend** on `http://127.0.0.1:8000`.
-3. Spawns the **Next.js Frontend** on `http://localhost:3000`.
-4. Opens your web browser directly to the dashboard.
-
----
-
-### Option 2: Manual Step-by-Step Setup
-
-#### 1. Backend Setup
-```bash
-cd backend
-
-# Create and activate virtual environment (optional but recommended)
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure Environment Variables
-cp .env.example .env
-# Open .env and add your GEMINI_API_KEY (from https://aistudio.google.com/)
-
-# Start FastAPI server
-python -m uvicorn main:app --reload --port 8000
-```
-- API Endpoint: `http://127.0.0.1:8000`
-- Interactive OpenAPI Docs: `http://127.0.0.1:8000/docs`
-
-#### 2. Frontend Setup
-```bash
-cd frontend
-
-# Install Node dependencies
-npm install
-
-# Start Next.js development server
-npm run dev
-```
-- Open [http://localhost:3000](http://localhost:3000) in your browser.
+1. Validates your Python and Node environments.
+2. Initializes `backend/.env` with your `GEMINI_API_KEY`.
+3. Launches the FastAPI Backend on `http://127.0.0.1:8000`.
+4. Launches the Next.js Frontend on `http://localhost:3000`.
+5. Opens your default web browser to the dashboard.
 
 ---
 
@@ -169,23 +147,6 @@ backend/tests/test_ai_os.py::test_executor_plan_and_safety_halt PASSED   [100%]
 
 ---
 
-## ☁️ Cloud Deployment (Render Blueprint)
-
-This project includes a ready-to-use [`render.yaml`](render.yaml) blueprint:
-
-1. Push this repository to your GitHub account.
-2. In the **[Render Dashboard](https://dashboard.render.com/)**, click **New +** -> **Blueprint**.
-3. Select your repository. Render will automatically configure:
-   - **Backend Web Service**: FastAPI on Python 3.11.
-   - **Frontend Web Service**: Next.js 15 on Node.js 20.
-4. Set your `GEMINI_API_KEY` in the environment settings and click **Apply**.
-
-> **Note on Cloud vs. Local Modes**:
-> - **Local Execution (`python run.py`)**: Has full access to your physical machine (Word, WhatsApp desktop, battery levels, local C:\ drive).
-> - **Cloud Deployment (Render)**: Runs the conversational AI, real-time weather, web research, calendar, and notes database. Desktop automation runs in sandbox/simulated mode.
-
----
-
 ## 📂 Project Directory Structure
 
 ```text
@@ -210,7 +171,7 @@ AI-OS/
 │   ├── main.py               # FastAPI application & WebSocket handlers
 │   ├── planner_agent.py      # Natural language plan decomposition
 │   ├── requirements.txt      # Python dependencies
-│   └── Procfile              # Cloud process declaration
+│   └── Procfile              # Render cloud process configuration
 ├── frontend/
 │   ├── src/
 │   │   └── app/
@@ -220,7 +181,7 @@ AI-OS/
 │   ├── package.json          # Node dependencies & Next.js scripts
 │   └── next.config.ts        # Turbopack & Next.js configuration
 ├── run.py                    # Cross-platform 1-click startup script
-├── render.yaml               # Render Cloud Blueprint infrastructure file
+├── render.yaml               # Render Cloud Infrastructure Blueprint
 ├── AI_OS_Dissertation_Final.pdf # Full Capstone Dissertation & Academic Report
 └── README.md                 # Project documentation
 ```
